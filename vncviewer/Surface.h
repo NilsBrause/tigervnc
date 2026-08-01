@@ -46,6 +46,16 @@ public:
   void draw(Surface* dst, int src_x, int src_y, int dst_x, int dst_y,
             int dst_w, int dst_h);
 
+  // Same as above, but the surface is stretched to scaled_w x scaled_h
+  // first. The source coordinates are given in that scaled coordinate
+  // space, i.e. they refer to the surface as it appears after scaling.
+  void draw(int scaled_w, int scaled_h,
+            int src_x, int src_y, int dst_x, int dst_y,
+            int dst_w, int dst_h);
+  void draw(Surface* dst, int scaled_w, int scaled_h,
+            int src_x, int src_y, int dst_x, int dst_y,
+            int dst_w, int dst_h);
+
   void blend(int src_x, int src_y, int dst_x, int dst_y,
              int dst_w, int dst_h, int a=255);
   void blend(Surface* dst, int src_x, int src_y, int dst_x, int dst_y,

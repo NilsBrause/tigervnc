@@ -22,9 +22,11 @@
 #endif
 
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
+#include <algorithm>
 #include <stdexcept>
 
 #include <core/LogWriter.h>
@@ -180,15 +182,85 @@ const rfb::PixelFormat &Viewport::getPreferredPF()
 }
 
 
+int Viewport::fbWidth() const
+{
+  return frameBuffer->width();
+}
+
+
+int Viewport::fbHeight() const
+{
+  return frameBuffer->height();
+}
+
+
+void Viewport::setFramebufferSize(int new_w, int new_h)
+{
+  if ((new_w == frameBuffer->width()) && (new_h == frameBuffer->height()))
+    return;
+
+  vlog.debug("Resizing framebuffer from %dx%d to %dx%d",
+             frameBuffer->width(), frameBuffer->height(), new_w, new_h);
+
+  frameBuffer = new PlatformPixelBuffer(new_w, new_h);
+  assert(frameBuffer);
+  cc->setFramebuffer(frameBuffer);
+}
+
+
+core::Point Viewport::remoteToLocal(const core::Point& pos) const
+{
+  if ((w() == frameBuffer->width()) && (h() == frameBuffer->height()))
+    return pos;
+
+  // Aim for the centre of the scaled pixel
+  return {(int)floor((pos.x + 0.5) * w() / frameBuffer->width()),
+          (int)floor((pos.y + 0.5) * h() / frameBuffer->height())};
+}
+
+
+core::Point Viewport::localToRemote(const core::Point& pos) const
+{
+  if ((w() == frameBuffer->width()) && (h() == frameBuffer->height()))
+    return pos;
+
+  return {(int)floor((double)pos.x * frameBuffer->width() / w()),
+          (int)floor((double)pos.y * frameBuffer->height() / h())};
+}
+
+
 // Copy the areas of the framebuffer that have been changed (damaged)
 // to the displayed window.
 
 void Viewport::updateWindow()
 {
   core::Rect r;
+  int X, Y, W, H;
 
   r = frameBuffer->getDamage();
-  damage(FL_DAMAGE_USER1, r.tl.x + x(), r.tl.y + y(), r.width(), r.height());
+  if (r.is_empty())
+    return;
+
+  if ((w() == frameBuffer->width()) && (h() == frameBuffer->height())) {
+    X = r.tl.x;
+    Y = r.tl.y;
+    W = r.width();
+    H = r.height();
+  } else {
+    double sx, sy;
+
+    sx = (double)w() / frameBuffer->width();
+    sy = (double)h() / frameBuffer->height();
+
+    // Round outwards, and add a pixel of margin, as the interpolation
+    // smears things slightly outside of the damaged area
+    X = std::max(0, (int)floor(r.tl.x * sx) - 1);
+    Y = std::max(0, (int)floor(r.tl.y * sy) - 1);
+    W = std::min(w(), (int)ceil(r.br.x * sx) + 1) - X;
+    H = std::min(h(), (int)ceil(r.br.y * sy) + 1) - Y;
+  }
+
+  damage(FL_DAMAGE_USER1, X + x(), Y + y(), W, H);
 }
 
 static const char * dotcursor_xpm[] = {
@@ -392,7 +464,7 @@ void Viewport::draw(Surface* dst)
   if ((W == 0) || (H == 0))
     return;
 
-  frameBuffer->draw(dst, X - x(), Y - y(), X, Y, W, H);
+  frameBuffer->draw(dst, w(), h(), X - x(), Y - y(), X, Y, W, H);
 }
 
 
@@ -405,22 +477,7 @@ void Viewport::draw()
   if ((W == 0) || (H == 0))
     return;
 
-  frameBuffer->draw(X - x(), Y - y(), X, Y, W, H);
-}
-
-
-void Viewport::resize(int x, int y, int w, int h)
-{
-  if ((w != frameBuffer->width()) || (h != frameBuffer->height())) {
-    vlog.debug("Resizing framebuffer from %dx%d to %dx%d",
-               frameBuffer->width(), frameBuffer->height(), w, h);
-
-    frameBuffer = new PlatformPixelBuffer(w, h);
-    assert(frameBuffer);
-    cc->setFramebuffer(frameBuffer);
-  }
-
-  Fl_Widget::resize(x, y, w, h);
+  frameBuffer->draw(w(), h(), X - x(), Y - y(), X, Y, W, H);
 }
 
 
@@ -465,7 +522,8 @@ int Viewport::handle(int event)
   case FL_LEAVE:
     window()->cursor(FL_CURSOR_DEFAULT);
     // We want a last move event to help trigger edge stuff
-    handlePointerEvent({Fl::event_x() - x(), Fl::event_y() - y()}, 0);
+    handlePointerEvent(localToRemote({Fl::event_x() - x(),
+                                      Fl::event_y() - y()}), 0);
     return 1;
 
   case FL_PUSH:
@@ -508,11 +566,13 @@ int Viewport::handle(int event)
 
       // A quick press of the wheel "button", followed by a immediate
       // release below
-      handlePointerEvent({Fl::event_x() - x(), Fl::event_y() - y()},
+      handlePointerEvent(localToRemote({Fl::event_x() - x(),
+                                        Fl::event_y() - y()}),
                          buttonMask | wheelMask);
-    } 
+    }
 
-    handlePointerEvent({Fl::event_x() - x(), Fl::event_y() - y()}, buttonMask);
+    handlePointerEvent(localToRemote({Fl::event_x() - x(),
+                                      Fl::event_y() - y()}), buttonMask);
     return 1;
 
   case FL_FOCUS:
@@ -1014,7 +1074,7 @@ void Viewport::popupContextMenu()
   case ID_RESIZE:
     if (window()->fullscreen_active())
       break;
-    window()->size(w(), h());
+    window()->size(fbWidth(), fbHeight());
     break;
   case ID_CTRL:
     if (m->value())

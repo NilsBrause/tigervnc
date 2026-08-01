@@ -188,6 +188,13 @@ core::BoolParameter
                _("Dynamically resize the remote desktop size as the "
                  "size of the local client window changes"),
                true);
+core::EnumParameter
+  scaling("Scaling",
+          core::format(
+            "%s (%s)",
+            _("Scale the remote desktop to the size of the viewer "
+              "window"), "None, FixedRatio, Fit").c_str(),
+          {"None", "FixedRatio", "Fit"}, "FixedRatio");
 
 core::BoolParameter
   viewOnly("ViewOnly",
@@ -278,6 +285,7 @@ static core::VoidParameter* parameterArray[] = {
   &fullScreen,
   &fullScreenMode,
   &fullScreenSelectedMonitors,
+  &scaling,
   /* Input */
   &viewOnly,
   &emulateMiddleButton,

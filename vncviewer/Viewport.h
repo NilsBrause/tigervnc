@@ -46,6 +46,19 @@ public:
   // Most efficient format (from Viewport's point of view)
   const rfb::PixelFormat &getPreferredPF();
 
+  // Size of the remote framebuffer, which is independent of the size
+  // of this widget as the image may be scaled
+  int fbWidth() const;
+  int fbHeight() const;
+
+  // Change the size of the remote framebuffer, but retain the contents
+  void setFramebufferSize(int new_w, int new_h);
+
+  // Conversion between remote framebuffer coordinates and coordinates
+  // local to this widget
+  core::Point remoteToLocal(const core::Point& pos) const;
+  core::Point localToRemote(const core::Point& pos) const;
+
   // Flush updates to screen
   void updateWindow();
 
@@ -65,8 +78,6 @@ public:
   // Fl_Widget callback methods
 
   void draw() override;
-
-  void resize(int x, int y, int w, int h) override;
 
   int handle(int event) override;
 

@@ -22,6 +22,7 @@
 
 #include <assert.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <stdexcept>
 
@@ -43,22 +44,95 @@ void Surface::clear(unsigned char r, unsigned char g, unsigned char b, unsigned 
                        0, 0, width(), height());
 }
 
+// Make the given picture behave as if it were scaled_w x scaled_h
+// pixels large. XRender maps the destination coordinates back through
+// the transform, so the source coordinates given to XRenderComposite()
+// are in the scaled coordinate space.
+static void set_scaling(Picture picture, int w, int h,
+                        int scaled_w, int scaled_h)
+{
+  XTransform xform;
+  XRenderPictureAttributes rep;
+
+  memset(&xform, 0, sizeof(xform));
+  xform.matrix[0][0] = XDoubleToFixed((double)w / scaled_w);
+  xform.matrix[1][1] = XDoubleToFixed((double)h / scaled_h);
+  xform.matrix[2][2] = XDoubleToFixed(1.0);
+
+  XRenderSetPictureTransform(fl_display, picture, &xform);
+  XRenderSetPictureFilter(fl_display, picture, FilterBilinear,
+                          nullptr, 0);
+
+  // Without this the interpolation will blend in transparent pixels
+  // along the edges of the surface
+  rep.repeat = RepeatPad;
+  XRenderChangePicture(fl_display, picture, CPRepeat, &rep);
+}
+
+static void clear_scaling(Picture picture)
+{
+  XTransform xform;
+  XRenderPictureAttributes rep;
+
+  memset(&xform, 0, sizeof(xform));
+  xform.matrix[0][0] = XDoubleToFixed(1.0);
+  xform.matrix[1][1] = XDoubleToFixed(1.0);
+  xform.matrix[2][2] = XDoubleToFixed(1.0);
+
+  XRenderSetPictureTransform(fl_display, picture, &xform);
+  XRenderSetPictureFilter(fl_display, picture, FilterNearest, nullptr, 0);
+
+  rep.repeat = RepeatNone;
+  XRenderChangePicture(fl_display, picture, CPRepeat, &rep);
+}
+
 void Surface::draw(int src_x, int src_y, int dst_x, int dst_y,
                    int dst_w, int dst_h)
 {
-  Picture winPict;
-
-  winPict = XRenderCreatePicture(fl_display, fl_window, visFormat, 0, nullptr);
-  XRenderComposite(fl_display, PictOpSrc, picture, None, winPict,
-                   src_x, src_y, 0, 0, dst_x, dst_y, dst_w, dst_h);
-  XRenderFreePicture(fl_display, winPict);
+  draw(width(), height(), src_x, src_y, dst_x, dst_y, dst_w, dst_h);
 }
 
 void Surface::draw(Surface* dst, int src_x, int src_y,
                    int dst_x, int dst_y, int dst_w, int dst_h)
 {
+  draw(dst, width(), height(), src_x, src_y, dst_x, dst_y, dst_w, dst_h);
+}
+
+void Surface::draw(int scaled_w, int scaled_h,
+                   int src_x, int src_y, int dst_x, int dst_y,
+                   int dst_w, int dst_h)
+{
+  Picture winPict;
+  bool scaled;
+
+  scaled = (scaled_w != width()) || (scaled_h != height());
+  if (scaled)
+    set_scaling(picture, width(), height(), scaled_w, scaled_h);
+
+  winPict = XRenderCreatePicture(fl_display, fl_window, visFormat, 0, nullptr);
+  XRenderComposite(fl_display, PictOpSrc, picture, None, winPict,
+                   src_x, src_y, 0, 0, dst_x, dst_y, dst_w, dst_h);
+  XRenderFreePicture(fl_display, winPict);
+
+  if (scaled)
+    clear_scaling(picture);
+}
+
+void Surface::draw(Surface* dst, int scaled_w, int scaled_h,
+                   int src_x, int src_y, int dst_x, int dst_y,
+                   int dst_w, int dst_h)
+{
+  bool scaled;
+
+  scaled = (scaled_w != width()) || (scaled_h != height());
+  if (scaled)
+    set_scaling(picture, width(), height(), scaled_w, scaled_h);
+
   XRenderComposite(fl_display, PictOpSrc, picture, None, dst->picture,
                    src_x, src_y, 0, 0, dst_x, dst_y, dst_w, dst_h);
+
+  if (scaled)
+    clear_scaling(picture);
 }
 
 static Picture alpha_mask(int a)

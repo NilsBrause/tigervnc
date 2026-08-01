@@ -300,6 +300,15 @@ Dynamically resize the remote desktop size as the size of the local client
 window changes. Note that this may not work with all VNC servers.
 .
 .TP
+.B \-Scaling \fImode\fP
+Scale the image received from the server to the size of the viewer window.
+Valid values are \fBNone\fP, which shows the image at its native size and
+uses scroll bars if the window is too small, \fBFixedRatio\fP, which scales
+the image as large as it fits whilst retaining the aspect ratio of the
+remote desktop, and \fBFit\fP, which stretches the image to cover the entire
+window. Default is \fBFixedRatio\fP.
+.
+.TP
 .B \-SecurityTypes \fIsec-types\fP
 Specify which security schemes to attempt to use when authenticating with
 the server.  Valid values are a comma separated list of \fBNone\fP,

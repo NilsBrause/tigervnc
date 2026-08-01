@@ -360,9 +360,9 @@ void DesktopWindow::updateWindow()
 
 void DesktopWindow::resizeFramebuffer(int new_w, int new_h)
 {
-  bool maximized;
+  bool maximized, matched;
 
-  if ((new_w == viewport->w()) && (new_h == viewport->h()))
+  if ((new_w == viewport->fbWidth()) && (new_h == viewport->fbHeight()))
     return;
 
   maximized = false;
@@ -382,15 +382,16 @@ void DesktopWindow::resizeFramebuffer(int new_w, int new_h)
     maximized = true;
 #endif
 
-  // If we're letting the viewport match the window perfectly, then
-  // keep things that way for the new size, otherwise just keep things
-  // like they are.
-  if (!fullscreen_active() && !maximized) {
-    if ((w() == viewport->w()) && (h() == viewport->h()))
-      size(new_w, new_h);
-  }
+  // If we're letting the window match the remote framebuffer perfectly,
+  // then keep things that way for the new size, otherwise just keep
+  // things like they are.
+  matched = !fullscreen_active() && !maximized &&
+            (w() == viewport->fbWidth()) && (h() == viewport->fbHeight());
 
-  viewport->size(new_w, new_h);
+  viewport->setFramebufferSize(new_w, new_h);
+
+  if (matched)
+    size(new_w, new_h);
 
   repositionWidgets();
 }
@@ -417,21 +418,28 @@ void DesktopWindow::setCursor()
 
 void DesktopWindow::setCursorPos(const core::Point& pos)
 {
+  core::Point local;
+
   if (!mouseGrabbed) {
     // Do nothing if we do not have the mouse captured.
     return;
   }
+
+  // The position is in remote coordinates, which might not be the same
+  // as the local ones if we are scaling the image
+  local = viewport->remoteToLocal(pos);
+
 #if defined(WIN32)
-  SetCursorPos(pos.x + x_root() + viewport->x(),
-               pos.y + y_root() + viewport->y());
+  SetCursorPos(local.x + x_root() + viewport->x(),
+               local.y + y_root() + viewport->y());
 #elif defined(__APPLE__)
   CGPoint new_pos;
-  new_pos.x = pos.x + x_root() + viewport->x();
-  new_pos.y = pos.y + y_root() + viewport->y();
+  new_pos.x = local.x + x_root() + viewport->x();
+  new_pos.y = local.y + y_root() + viewport->y();
   CGWarpMouseCursorPosition(new_pos);
 #else // Assume this is Xlib
-  x11_warp_pointer(pos.x + x_root() + viewport->x(),
-                   pos.y + y_root() + viewport->y());
+  x11_warp_pointer(local.x + x_root() + viewport->x(),
+                   local.y + y_root() + viewport->y());
 #endif
 }
 
@@ -1454,6 +1462,39 @@ void DesktopWindow::remoteResize()
 void DesktopWindow::repositionWidgets()
 {
   int new_x, new_y;
+  int new_w, new_h;
+
+  // Viewport size
+  //
+  // The viewport widget covers the area the remote framebuffer is
+  // drawn on, which is not necessarily the same as the size of the
+  // remote framebuffer itself as we may be scaling the image.
+
+  new_w = viewport->fbWidth();
+  new_h = viewport->fbHeight();
+
+  if (scaling != "None") {
+    // We always fit inside the window when scaling, so there is no
+    // need to consider any scrollbars here
+    if (scaling == "Fit") {
+      new_w = w();
+      new_h = h();
+    } else {
+      double factor;
+
+      factor = std::min((double)w() / new_w, (double)h() / new_h);
+
+      new_w = std::max(1, (int)(new_w * factor + 0.5));
+      new_h = std::max(1, (int)(new_h * factor + 0.5));
+    }
+  }
+
+  if ((new_w != viewport->w()) || (new_h != viewport->h())) {
+    viewport->size(new_w, new_h);
+    // The scaling changed, so everything needs to be redrawn, as does
+    // the background around the image
+    damage(FL_DAMAGE_SCROLL);
+  }
 
   // Viewport position
 
@@ -1553,6 +1594,9 @@ void DesktopWindow::handleOptions(void *data)
     self->fullscreen_on();
   else if (!fullScreen && self->fullscreen_active())
     self->fullscreen_off();
+
+  // The scaling might have changed
+  self->repositionWidgets();
 }
 
 void DesktopWindow::handleFullscreenTimeout(void *data)

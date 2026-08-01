@@ -53,7 +53,22 @@ void Surface::clear(unsigned char r, unsigned char g, unsigned char b, unsigned 
 void Surface::draw(int src_x, int src_y, int dst_x, int dst_y,
                    int dst_w, int dst_h)
 {
+  draw(width(), height(), src_x, src_y, dst_x, dst_y, dst_w, dst_h);
+}
+
+void Surface::draw(Surface* dst, int src_x, int src_y,
+                   int dst_x, int dst_y, int dst_w, int dst_h)
+{
+  draw(dst, width(), height(), src_x, src_y, dst_x, dst_y, dst_w, dst_h);
+}
+
+void Surface::draw(int scaled_w, int scaled_h,
+                   int src_x, int src_y, int dst_x, int dst_y,
+                   int dst_w, int dst_h)
+{
   HDC dc;
+  bool scaled;
+  BOOL ret;
 
   dc = CreateCompatibleDC(fl_gc);
   if (!dc)
@@ -62,8 +77,27 @@ void Surface::draw(int src_x, int src_y, int dst_x, int dst_y,
   if (!SelectObject(dc, bitmap))
     throw core::win32_error("SelectObject", GetLastError());
 
-  if (!BitBlt(fl_gc, dst_x, dst_y, dst_w, dst_h,
-              dc, src_x, src_y, SRCCOPY)) {
+  scaled = (scaled_w != width()) || (scaled_h != height());
+
+  if (!scaled) {
+    ret = BitBlt(fl_gc, dst_x, dst_y, dst_w, dst_h,
+                 dc, src_x, src_y, SRCCOPY);
+  } else {
+    // GDI cannot stretch a sub rectangle of the source without
+    // introducing rounding errors along the edges, so stretch the
+    // entire surface and let the clip region pick out the part we
+    // are actually interested in
+    SaveDC(fl_gc);
+    IntersectClipRect(fl_gc, dst_x, dst_y, dst_x + dst_w, dst_y + dst_h);
+    SetStretchBltMode(fl_gc, HALFTONE);
+    SetBrushOrgEx(fl_gc, 0, 0, nullptr);
+    ret = StretchBlt(fl_gc, dst_x - src_x, dst_y - src_y,
+                     scaled_w, scaled_h,
+                     dc, 0, 0, width(), height(), SRCCOPY);
+    RestoreDC(fl_gc, -1);
+  }
+
+  if (!ret) {
     // If the desktop we're rendering to is inactive (like when the screen
     // is locked or the UAC is active), then GDI calls will randomly fail.
     // This is completely undocumented so we have no idea how best to deal
@@ -76,8 +110,9 @@ void Surface::draw(int src_x, int src_y, int dst_x, int dst_y,
   DeleteDC(dc);
 }
 
-void Surface::draw(Surface* dst, int src_x, int src_y,
-                   int dst_x, int dst_y, int dst_w, int dst_h)
+void Surface::draw(Surface* dst, int scaled_w, int scaled_h,
+                   int src_x, int src_y, int dst_x, int dst_y,
+                   int dst_w, int dst_h)
 {
   HDC origdc, dstdc;
 
@@ -90,7 +125,7 @@ void Surface::draw(Surface* dst, int src_x, int src_y,
 
   origdc = fl_gc;
   fl_gc = dstdc;
-  draw(src_x, src_y, dst_x, dst_y, dst_w, dst_h);
+  draw(scaled_w, scaled_h, src_x, src_y, dst_x, dst_y, dst_w, dst_h);
   fl_gc = origdc;
 
   DeleteDC(dstdc);

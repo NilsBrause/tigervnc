@@ -70,7 +70,8 @@ static CGImageRef create_image(CGColorSpaceRef lut,
 static void render(CGContextRef gc, CGColorSpaceRef lut,
                    const unsigned char* data,
                    CGBlendMode mode, CGFloat alpha,
-                   int src_x, int src_y, int src_w, int src_h,
+                   int src_w, int src_h, int scaled_w, int scaled_h,
+                   int src_x, int src_y,
                    int x, int y, int w, int h)
 {
   CGRect rect;
@@ -78,30 +79,58 @@ static void render(CGContextRef gc, CGColorSpaceRef lut,
 
   image = create_image(lut, data, src_w, src_h, mode == kCGBlendModeCopy);
 
-  rect.origin.x = src_x;
-  rect.origin.y = src_y;
-  rect.size.width = w;
-  rect.size.height = h;
-
-  subimage = CGImageCreateWithImageInRect(image, rect);
-  if (!subimage)
-    throw std::runtime_error("CGImageCreateImageWithImageInRect");
-
   CGContextSaveGState(gc);
 
   CGContextSetBlendMode(gc, mode);
   CGContextSetAlpha(gc, alpha);
 
-  rect.origin.x = x;
-  rect.origin.y = y;
-  rect.size.width = w;
-  rect.size.height = h;
+  if ((scaled_w == src_w) && (scaled_h == src_h)) {
+    rect.origin.x = src_x;
+    rect.origin.y = src_y;
+    rect.size.width = w;
+    rect.size.height = h;
 
-  CGContextDrawImage(gc, rect, subimage);
+    subimage = CGImageCreateWithImageInRect(image, rect);
+    if (!subimage) {
+      CGContextRestoreGState(gc);
+      CGImageRelease(image);
+      throw std::runtime_error("CGImageCreateImageWithImageInRect");
+    }
+
+    rect.origin.x = x;
+    rect.origin.y = y;
+    rect.size.width = w;
+    rect.size.height = h;
+
+    CGContextDrawImage(gc, rect, subimage);
+
+    CGImageRelease(subimage);
+  } else {
+    // Core Graphics cannot stretch a sub rectangle of the image
+    // without introducing rounding errors along the edges, so stretch
+    // the entire image and let the clip region pick out the part we
+    // are actually interested in
+    rect.origin.x = x;
+    rect.origin.y = y;
+    rect.size.width = w;
+    rect.size.height = h;
+
+    CGContextClipToRect(gc, rect);
+
+    CGContextSetInterpolationQuality(gc, kCGInterpolationHigh);
+
+    // Note that the y axis is flipped compared to the source
+    // coordinates we've been given
+    rect.origin.x = x - src_x;
+    rect.origin.y = y + h + src_y - scaled_h;
+    rect.size.width = scaled_w;
+    rect.size.height = scaled_h;
+
+    CGContextDrawImage(gc, rect, image);
+  }
 
   CGContextRestoreGState(gc);
 
-  CGImageRelease(subimage);
   CGImageRelease(image);
 }
 
@@ -140,6 +169,19 @@ void Surface::clear(unsigned char r, unsigned char g, unsigned char b, unsigned 
 void Surface::draw(int src_x, int src_y, int dst_x, int dst_y,
                    int dst_w, int dst_h)
 {
+  draw(width(), height(), src_x, src_y, dst_x, dst_y, dst_w, dst_h);
+}
+
+void Surface::draw(Surface* dst, int src_x, int src_y,
+                   int dst_x, int dst_y, int dst_w, int dst_h)
+{
+  draw(dst, width(), height(), src_x, src_y, dst_x, dst_y, dst_w, dst_h);
+}
+
+void Surface::draw(int scaled_w, int scaled_h,
+                   int src_x, int src_y, int dst_x, int dst_y,
+                   int dst_w, int dst_h)
+{
   CGColorSpaceRef lut;
 
   CGContextSaveGState(fl_gc);
@@ -153,14 +195,16 @@ void Surface::draw(int src_x, int src_y, int dst_x, int dst_y,
 
   lut = cocoa_win_color_space(Fl_Window::current());
   render(fl_gc, lut, data, kCGBlendModeCopy, 1.0,
-         src_x, src_y, width(), height(), dst_x, dst_y, dst_w, dst_h);
+         width(), height(), scaled_w, scaled_h,
+         src_x, src_y, dst_x, dst_y, dst_w, dst_h);
   CGColorSpaceRelease(lut);
 
   CGContextRestoreGState(fl_gc);
 }
 
-void Surface::draw(Surface* dst, int src_x, int src_y,
-                   int dst_x, int dst_y, int dst_w, int dst_h)
+void Surface::draw(Surface* dst, int scaled_w, int scaled_h,
+                   int src_x, int src_y, int dst_x, int dst_y,
+                   int dst_w, int dst_h)
 {
   CGContextRef bitmap;
 
@@ -170,7 +214,8 @@ void Surface::draw(Surface* dst, int src_x, int src_y,
   dst_y = dst->height() - (dst_y + dst_h);
 
   render(bitmap, srgb, data, kCGBlendModeCopy, 1.0,
-         src_x, src_y, width(), height(), dst_x, dst_y, dst_w, dst_h);
+         width(), height(), scaled_w, scaled_h,
+         src_x, src_y, dst_x, dst_y, dst_w, dst_h);
 
   CGContextRelease(bitmap);
 }
@@ -191,7 +236,8 @@ void Surface::blend(int src_x, int src_y, int dst_x, int dst_y,
 
   lut = cocoa_win_color_space(Fl_Window::current());
   render(fl_gc, lut, data, kCGBlendModeNormal, (CGFloat)a/255.0,
-         src_x, src_y, width(), height(), dst_x, dst_y, dst_w, dst_h);
+         width(), height(), width(), height(),
+         src_x, src_y, dst_x, dst_y, dst_w, dst_h);
   CGColorSpaceRelease(lut);
 
   CGContextRestoreGState(fl_gc);
@@ -208,7 +254,8 @@ void Surface::blend(Surface* dst, int src_x, int src_y,
   dst_y = dst->height() - (dst_y + dst_h);
 
   render(bitmap, srgb, data, kCGBlendModeNormal, (CGFloat)a/255.0,
-         src_x, src_y, width(), height(), dst_x, dst_y, dst_w, dst_h);
+         width(), height(), width(), height(),
+         src_x, src_y, dst_x, dst_y, dst_w, dst_h);
 
   CGContextRelease(bitmap);
 }

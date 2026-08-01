@@ -357,6 +357,15 @@ void OptionsDialog::loadOptions(void)
 
   handleFullScreenMode(selectedMonitorsButton, this);
 
+  if (scaling == "None") {
+    scalingChoice->value(0);
+  } else if (scaling == "Fit") {
+    scalingChoice->value(2);
+  } else {
+    // Default
+    scalingChoice->value(1);
+  }
+
   /* Misc. */
   sharedCheckbox->value(shared);
   reconnectCheckbox->value(reconnectOnError);
@@ -511,6 +520,14 @@ void OptionsDialog::storeOptions(void)
   }
 
   fullScreenSelectedMonitors.setMonitors(monitorArrangement->value());
+
+  if (scalingChoice->value() == 0) {
+    scaling.setParam("None");
+  } else if (scalingChoice->value() == 2) {
+    scaling.setParam("Fit");
+  } else {
+    scaling.setParam("FixedRatio");
+  }
 
   /* Misc. */
   shared.setParam(sharedCheckbox->value());
@@ -1227,6 +1244,18 @@ void OptionsDialog::createDisplayPage(int tx, int ty, int tw, int th)
   tx = orig_tx;
   ty += INNER_MARGIN;
   width = tw - OUTER_MARGIN * 2;
+
+  scalingChoice = new Fl_Choice(LBLLEFT(tx, ty, 150, CHOICE_HEIGHT,
+                                        _("Scaling")));
+
+  fltk_menu_add(scalingChoice, _("None"), 0, nullptr, nullptr, 0);
+  fltk_menu_add(scalingChoice, _("Fixed aspect ratio"),
+                0, nullptr, nullptr, 0);
+  fltk_menu_add(scalingChoice, _("Fill window"), 0, nullptr, nullptr, 0);
+
+  fltk_adjust_choice(scalingChoice);
+
+  ty += CHOICE_HEIGHT + INNER_MARGIN;
 
   group->end();
 }
