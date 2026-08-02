@@ -182,14 +182,34 @@ if(ENABLE_NLS)
 endif()
 
 trioption(ENABLE_H264 "Enable H.264 RFB encoding")
+
+# WIN is the hardware accelerated decoder from Media Foundation, and LIBAV is
+# the software decoder from FFMPEG. AUTO picks WIN on Windows, LIBAV elsewhere.
+set(H264_BACKEND AUTO CACHE STRING "H.264 decoder to use (AUTO, WIN or LIBAV)")
+set_property(CACHE H264_BACKEND PROPERTY STRINGS AUTO WIN LIBAV)
+
 if(ENABLE_H264)
-  if(WIN32)
+  set(H264_DECODER ${H264_BACKEND})
+  if(H264_DECODER STREQUAL "AUTO")
+    if(WIN32)
+      set(H264_DECODER WIN)
+    else()
+      set(H264_DECODER LIBAV)
+    endif()
+  endif()
+
+  if(H264_DECODER STREQUAL "WIN")
+    if(NOT WIN32)
+      message(FATAL_ERROR "H264_BACKEND=WIN is only available on Windows")
+    endif()
+
     set(HAVE_H264 1)
+    set(HAVE_WIN_H264 1)
 
     set(CMAKE_REQUIRED_LIBRARIES ole32 mfplat mfuuid wmcodecdspuuid)
     check_variable_exists(CLSID_VideoProcessorMFT HAVE_VIDEO_PROCESSOR_MFT)
     set(CMAKE_REQUIRED_LIBRARIES)
-  else()
+  elseif(H264_DECODER STREQUAL "LIBAV")
     if(ENABLE_H264 STREQUAL "AUTO")
       find_package(AVCodec)
       find_package(AVUtil)
@@ -205,6 +225,8 @@ if(ENABLE_H264)
     else()
       message(WARNING "FFMPEG support can't be found")
     endif()
+  else()
+    message(FATAL_ERROR "Unknown H.264 decoder: ${H264_BACKEND}")
   endif()
 endif()
 

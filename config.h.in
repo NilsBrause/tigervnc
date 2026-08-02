@@ -15,6 +15,7 @@
 #cmakedefine HAVE_XTEST
 
 #cmakedefine HAVE_H264
+#cmakedefine HAVE_WIN_H264
 #cmakedefine HAVE_VIDEO_PROCESSOR_MFT
 #cmakedefine HAVE_LIBAV
 

@@ -71,6 +71,11 @@ Build requirements (Windows)
 
 -- MinGW or MinGW-w64
 
+-- Optional ffmpeg development kit support (libav)
+   Only needed when building with -DH264_BACKEND=LIBAV, which uses the
+   software H.264 decoder from ffmpeg instead of the hardware accelerated
+   Media Foundation decoder that is used by default on Windows.
+
 -- Inno Setup (needed to build the TigerVNC installer)
    Inno Setup can be downloaded from http://www.jrsoftware.org/isinfo.php.
    You also need the Inno Setup Preprocessor, which is available in the

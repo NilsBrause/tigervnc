@@ -74,10 +74,10 @@ add_library(rfbclient STATIC
 target_include_directories(rfbclient PUBLIC ${CMAKE_SOURCE_DIR}/common)
 target_link_libraries(rfbclient core rdr rfb)
 
-if(ENABLE_H264)
+if(HAVE_H264)
   target_sources(rfbclient PRIVATE
                  H264Decoder.cxx H264DecoderContext.cxx)
-  if (AVCODEC_FOUND AND AVUTIL_FOUND AND SWSCALE_FOUND)
+  if(HAVE_LIBAV)
     target_sources(rfbclient PRIVATE H264LibavDecoderContext.cxx)
     target_include_directories(rfbclient SYSTEM PUBLIC
                                ${AVCODEC_INCLUDE_DIRS}
@@ -85,8 +85,7 @@ if(ENABLE_H264)
                                ${SWSCALE_INCLUDE_DIRS})
     target_link_libraries(rfbclient ${AVCODEC_LIBRARIES}
                           ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES})
-  endif()
-  if(WIN32)
+  elseif(HAVE_WIN_H264)
     target_sources(rfbclient PRIVATE H264WinDecoderContext.cxx)
     target_link_libraries(rfbclient ole32 mfplat mfuuid wmcodecdspuuid)
   endif()

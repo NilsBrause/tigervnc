@@ -1,6 +1,6 @@
 name: Build
 
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 
 jobs:
   build-linux:
@@ -131,6 +131,77 @@ jobs:
       - uses: dorny/test-reporter@v3
         with:
           artifact: test-results-windows
+          name: FIXME not used, but required
+          path: '*.xml'
+          reporter: java-junit
+
+  # The default Windows build uses the Media Foundation H.264 decoder, so
+  # make sure the software decoder from FFMPEG keeps building there as well
+  build-windows-libav:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      VERBOSE: 1
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: msys2/setup-msys2@v2
+        with:
+          update: true
+      - name: Install dependencies
+        run: |
+          pacman --sync --noconfirm --needed \
+            make mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake
+          pacman --sync --noconfirm --needed \
+            mingw-w64-x86_64-fltk1.3 mingw-w64-x86_64-libjpeg-turbo \
+            mingw-w64-x86_64-gnutls mingw-w64-x86_64-pixman \
+            mingw-w64-x86_64-nettle mingw-w64-x86_64-gmp \
+            mingw-w64-x86_64-gtest mingw-w64-x86_64-ffmpeg
+      - name: Configure
+        run: |
+          cmake \
+            -G "MSYS Makefiles" \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENABLE_NLS=ON \
+            -DENABLE_H264=ON \
+            -DH264_BACKEND=LIBAV \
+            -DENABLE_GNUTLS=ON \
+            -DENABLE_NETTLE=ON \
+            -DBUILD_VIEWER=ON \
+            -S . -B build
+      - name: Build
+        working-directory: build
+        run: make
+      - name: Install
+        working-directory: build
+        env:
+          MSYS2_PATH_TYPE: inherit
+        run: make installer winvnc_installer
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Windows (libav)
+          path: build/release/tigervnc*.exe
+      - name: Test
+        continue-on-error: true
+        working-directory: build
+        run: ctest --test-dir tests/unit/ --output-junit test-results.xml
+      - name: Upload test results
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-windows-libav
+          path: build/tests/unit/test-results.xml
+
+  report-windows-libav:
+    name: Unit tests (Windows, libav)
+    runs-on: ubuntu-latest
+    needs: build-windows-libav
+    if: always()
+    steps:
+      - uses: dorny/test-reporter@v3
+        with:
+          artifact: test-results-windows-libav
           name: FIXME not used, but required
           path: '*.xml'
           reporter: java-junit

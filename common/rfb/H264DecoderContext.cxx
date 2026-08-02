@@ -26,9 +26,10 @@
 
 #ifdef HAVE_LIBAV
 #include <rfb/H264LibavDecoderContext.h>
-#endif
-#ifdef WIN32
+#elif defined(HAVE_WIN_H264)
 #include <rfb/H264WinDecoderContext.h>
+#else
+#error "No H.264 decoder configured"
 #endif
 
 using namespace rfb;
@@ -37,8 +38,7 @@ H264DecoderContext *H264DecoderContext::createContext(const core::Rect &r)
 {
 #ifdef HAVE_LIBAV
   return new H264LibavDecoderContext(r);
-#endif
-#ifdef WIN32
+#else
   return new H264WinDecoderContext(r);
 #endif
 }
